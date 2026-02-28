@@ -7,7 +7,7 @@ import { execSync } from 'child_process';
 import { logger } from './logger.js';
 
 /** The container runtime binary name. */
-export const CONTAINER_RUNTIME_BIN = 'container';
+export const CONTAINER_RUNTIME_BIN = 'docker';
 
 /** Returns CLI args for a readonly bind mount. */
 export function readonlyMountArgs(
@@ -25,7 +25,7 @@ export function stopContainer(name: string): string {
 /** Ensure the container runtime is running, starting it if needed. */
 export function ensureContainerRuntimeRunning(): void {
   try {
-    execSync(`${CONTAINER_RUNTIME_BIN} system status`, {
+    execSync(`${CONTAINER_RUNTIME_BIN} info`, {
       stdio: 'pipe',
       timeout: 10000,
     });
@@ -64,18 +64,10 @@ export function ensureContainerRuntimeRunning(): void {
 export function cleanupOrphans(): void {
   try {
     const output = execSync(
-      `${CONTAINER_RUNTIME_BIN} list --format json`,
+      `${CONTAINER_RUNTIME_BIN} ps --filter name=nanoclaw- --format '{{.Names}}'`,
       { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8' },
     );
-    const containers: Array<{ status: string; configuration: { id: string } }> =
-      JSON.parse(output);
-    const orphans = containers
-      .filter(
-        (c) =>
-          c.status === 'running' &&
-          c.configuration.id.startsWith('nanoclaw-'),
-      )
-      .map((c) => c.configuration.id);
+    const orphans = output.trim().split('\n').filter(Boolean);
     for (const name of orphans) {
       try {
         execSync(stopContainer(name), { stdio: 'pipe' });
