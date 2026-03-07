@@ -1,6 +1,11 @@
 ---
 name: use-local-whisper
-description: Use when the user wants local voice transcription instead of OpenAI Whisper API. Switches to whisper.cpp running on Apple Silicon. WhatsApp only for now. Requires voice-transcription skill to be applied first.
+description: Switch from OpenAI Whisper API to local whisper.cpp for on-device speech-to-text. Runs on Apple Silicon. WhatsApp only for now. Requires the add-voice-transcription skill to be applied first.
+triggers:
+  - "use.?local.?whisper"
+  - "local.?whisper"
+  - "switch.?to.?whisper"
+  - "whisper.?cpp"
 ---
 
 # Use Local Whisper
