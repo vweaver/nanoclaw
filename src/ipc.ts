@@ -3,15 +3,55 @@ import path from 'path';
 
 import { CronExpressionParser } from 'cron-parser';
 
-import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
+import { DATA_DIR, GROUPS_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
+import { sendPoolFile, sendPoolMessage } from './channels/telegram.js';
 import { AvailableGroup } from './container-runner.js';
 import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
 
+/**
+ * Resolve a container file path back to a host path.
+ * Container mounts:
+ *   /workspace/group/  → groups/{sourceGroup}/
+ *   /workspace/extra/{name}/ → additional mount host path (looked up from group config)
+ *   /workspace/project/ → project root (cwd)
+ */
+function resolveContainerPath(
+  containerPath: string,
+  sourceGroup: string,
+  registeredGroups: Record<string, RegisteredGroup>,
+): string | null {
+  if (containerPath.startsWith('/workspace/group/')) {
+    return path.join(GROUPS_DIR, sourceGroup, containerPath.slice('/workspace/group/'.length));
+  }
+  if (containerPath.startsWith('/workspace/extra/')) {
+    const rest = containerPath.slice('/workspace/extra/'.length);
+    const mountName = rest.split('/')[0];
+    const subPath = rest.slice(mountName.length + 1);
+    // Find the group's additional mount config to get the host path
+    for (const group of Object.values(registeredGroups)) {
+      if (group.folder === sourceGroup && group.containerConfig?.additionalMounts) {
+        for (const mount of group.containerConfig.additionalMounts) {
+          const cp = mount.containerPath || path.basename(mount.hostPath);
+          if (cp === mountName) {
+            return path.join(mount.hostPath, subPath);
+          }
+        }
+      }
+    }
+    return null;
+  }
+  if (containerPath.startsWith('/workspace/project/')) {
+    return path.join(process.cwd(), containerPath.slice('/workspace/project/'.length));
+  }
+  return null;
+}
+
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
+  sendFile?: (jid: string, filePath: string, caption?: string) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -73,14 +113,24 @@ export function startIpcWatcher(deps: IpcDeps): void {
             const filePath = path.join(messagesDir, file);
             try {
               const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+              // Authorization: verify this group can send to this chatJid
+              const targetGroup = registeredGroups[data.chatJid];
+              const authorized =
+                isMain ||
+                (targetGroup && targetGroup.folder === sourceGroup);
+
               if (data.type === 'message' && data.chatJid && data.text) {
-                // Authorization: verify this group can send to this chatJid
-                const targetGroup = registeredGroups[data.chatJid];
-                if (
-                  isMain ||
-                  (targetGroup && targetGroup.folder === sourceGroup)
-                ) {
-                  await deps.sendMessage(data.chatJid, data.text);
+                if (authorized) {
+                  if (data.sender && data.chatJid.startsWith('tg:')) {
+                    await sendPoolMessage(
+                      data.chatJid,
+                      data.text,
+                      data.sender,
+                      sourceGroup,
+                    );
+                  } else {
+                    await deps.sendMessage(data.chatJid, data.text);
+                  }
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },
                     'IPC message sent',
@@ -89,6 +139,46 @@ export function startIpcWatcher(deps: IpcDeps): void {
                   logger.warn(
                     { chatJid: data.chatJid, sourceGroup },
                     'Unauthorized IPC message attempt blocked',
+                  );
+                }
+              } else if (data.type === 'file' && data.chatJid && data.filePath) {
+                if (authorized) {
+                  const hostPath = resolveContainerPath(
+                    data.filePath,
+                    sourceGroup,
+                    registeredGroups,
+                  );
+                  if (hostPath && fs.existsSync(hostPath)) {
+                    if (data.sender && data.chatJid.startsWith('tg:')) {
+                      await sendPoolFile(
+                        data.chatJid,
+                        hostPath,
+                        data.sender,
+                        sourceGroup,
+                        data.caption,
+                      );
+                    } else if (deps.sendFile) {
+                      await deps.sendFile(data.chatJid, hostPath, data.caption);
+                    } else {
+                      logger.warn(
+                        { chatJid: data.chatJid },
+                        'Channel does not support file sending',
+                      );
+                    }
+                  } else {
+                    logger.error(
+                      { containerPath: data.filePath, hostPath, sourceGroup },
+                      'IPC file not found on host',
+                    );
+                  }
+                  logger.info(
+                    { chatJid: data.chatJid, filePath: data.filePath, sourceGroup },
+                    'IPC file sent',
+                  );
+                } else {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'Unauthorized IPC file attempt blocked',
                   );
                 }
               }

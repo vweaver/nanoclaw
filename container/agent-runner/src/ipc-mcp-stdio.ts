@@ -63,6 +63,38 @@ server.tool(
 );
 
 server.tool(
+  'send_file',
+  'Send a file (image, PDF, document) to the user or group. The file must exist in your workspace.',
+  {
+    file_path: z.string().describe('Absolute path to the file inside the container (e.g. /workspace/group/report.pdf)'),
+    caption: z.string().optional().describe('Optional caption to send with the file'),
+    sender: z.string().optional().describe('Your role/identity name (e.g. "Researcher"). When set, file is sent from a dedicated bot in Telegram.'),
+  },
+  async (args) => {
+    if (!fs.existsSync(args.file_path)) {
+      return {
+        content: [{ type: 'text' as const, text: `File not found: ${args.file_path}` }],
+        isError: true,
+      };
+    }
+
+    const data: Record<string, string | undefined> = {
+      type: 'file',
+      chatJid,
+      filePath: args.file_path,
+      caption: args.caption || undefined,
+      sender: args.sender || undefined,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    return { content: [{ type: 'text' as const, text: `File sent: ${args.file_path}` }] };
+  },
+);
+
+server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools.
 
