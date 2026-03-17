@@ -168,11 +168,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   const agentName = groupAssistantName(chatJid);
   const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
-  const missedMessages = getMessagesSince(
-    chatJid,
-    sinceTimestamp,
-    agentName,
-  );
+  const missedMessages = getMessagesSince(chatJid, sinceTimestamp, agentName);
 
   if (missedMessages.length === 0) return true;
 
@@ -475,7 +471,11 @@ async function startMessageLoop(): Promise<void> {
 function recoverPendingMessages(): void {
   for (const [chatJid, group] of Object.entries(registeredGroups)) {
     const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
-    const pending = getMessagesSince(chatJid, sinceTimestamp, groupAssistantName(chatJid));
+    const pending = getMessagesSince(
+      chatJid,
+      sinceTimestamp,
+      groupAssistantName(chatJid),
+    );
     if (pending.length > 0) {
       logger.info(
         { group: group.name, pendingCount: pending.length },
@@ -533,9 +533,16 @@ async function main(): Promise<void> {
       // - Telegram user messages → display in terminal
       if (msg.sender === 'terminal-user') {
         for (const ch of channels) {
-          if (ch.name !== 'terminal' && ch.ownsJid(chatJid) && ch.isConnected()) {
+          if (
+            ch.name !== 'terminal' &&
+            ch.ownsJid(chatJid) &&
+            ch.isConnected()
+          ) {
             ch.sendMessage(chatJid, `[You] ${msg.content}`).catch((err) =>
-              logger.warn({ chatJid, err }, 'Failed to bridge terminal message'),
+              logger.warn(
+                { chatJid, err },
+                'Failed to bridge terminal message',
+              ),
             );
           }
         }

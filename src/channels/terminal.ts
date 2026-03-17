@@ -64,7 +64,9 @@ export class TerminalChannel implements Channel {
     });
 
     const groupName = this.getGroupName(this.activeJid);
-    console.log(`\n  Terminal channel active — group: ${groupName} (${this.activeJid})`);
+    console.log(
+      `\n  Terminal channel active — group: ${groupName} (${this.activeJid})`,
+    );
     console.log(`  Commands: /groups, /switch <name>, /help\n`);
     this.rl.prompt();
   }
@@ -104,7 +106,9 @@ export class TerminalChannel implements Channel {
             group.folder.toLowerCase() === query,
         );
         if (!match) {
-          this.printSystem(`No group matching "${args.join(' ')}". Use /groups to list.`);
+          this.printSystem(
+            `No group matching "${args.join(' ')}". Use /groups to list.`,
+          );
           break;
         }
         const [jid, group] = match;
@@ -159,7 +163,8 @@ export class TerminalChannel implements Channel {
       readline.clearLine(process.stdout, 0);
       readline.cursorTo(process.stdout, 0);
     }
-    const agentName = this.opts.registeredGroups()[jid]?.assistantName || ASSISTANT_NAME;
+    const agentName =
+      this.opts.registeredGroups()[jid]?.assistantName || ASSISTANT_NAME;
     console.log(`${agentName}> ${text}`);
     this.rl?.prompt();
   }

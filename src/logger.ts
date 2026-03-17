@@ -6,10 +6,7 @@ const stream = pinoPretty({
   destination: 2,
 });
 
-export const logger = pino(
-  { level: process.env.LOG_LEVEL || 'info' },
-  stream,
-);
+export const logger = pino({ level: process.env.LOG_LEVEL || 'info' }, stream);
 
 // Route uncaught errors through pino so they get timestamps in stderr
 process.on('uncaughtException', (err) => {

@@ -44,10 +44,7 @@ export function findChannel(
   return channels.find((c) => c.ownsJid(jid));
 }
 
-export function findAllChannels(
-  channels: Channel[],
-  jid: string,
-): Channel[] {
+export function findAllChannels(channels: Channel[], jid: string): Channel[] {
   return channels.filter((c) => c.ownsJid(jid));
 }
 
@@ -57,8 +54,6 @@ export async function broadcastMessage(
   jid: string,
   text: string,
 ): Promise<void> {
-  const targets = findAllChannels(channels, jid).filter((c) =>
-    c.isConnected(),
-  );
+  const targets = findAllChannels(channels, jid).filter((c) => c.isConnected());
   await Promise.all(targets.map((c) => c.sendMessage(jid, text)));
 }
