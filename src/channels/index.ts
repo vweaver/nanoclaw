@@ -10,4 +10,7 @@
 // telegram
 import './telegram.js';
 
+// terminal
+import './terminal.js';
+
 // whatsapp

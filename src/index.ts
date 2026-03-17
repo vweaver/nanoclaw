@@ -43,7 +43,13 @@ import {
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
-import { findChannel, formatMessages, formatOutbound } from './router.js';
+import {
+  broadcastMessage,
+  findAllChannels,
+  findChannel,
+  formatMessages,
+  formatOutbound,
+} from './router.js';
 import {
   isSenderAllowed,
   isTriggerAllowed,
@@ -52,11 +58,17 @@ import {
 } from './sender-allowlist.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { initBotPool } from './channels/telegram.js';
+import { getTerminalChannel } from './channels/terminal.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 
 // Re-export for backwards compatibility during refactor
 export { escapeXml, formatMessages } from './router.js';
+
+/** Resolve the assistant name for a group (per-group override or global default). */
+function groupAssistantName(chatJid: string): string {
+  return registeredGroups[chatJid]?.assistantName || ASSISTANT_NAME;
+}
 
 let lastTimestamp = '';
 let sessions: Record<string, string> = {};
@@ -154,11 +166,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   const isMainGroup = group.isMain === true;
 
+  const agentName = groupAssistantName(chatJid);
   const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
   const missedMessages = getMessagesSince(
     chatJid,
     sinceTimestamp,
-    ASSISTANT_NAME,
+    agentName,
   );
 
   if (missedMessages.length === 0) return true;
@@ -202,7 +215,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }, IDLE_TIMEOUT);
   };
 
-  await channel.setTyping?.(chatJid, true);
+  for (const ch of findAllChannels(channels, chatJid)) {
+    await ch.setTyping?.(chatJid, true);
+  }
   let hadError = false;
   let outputSentToUser = false;
 
@@ -217,12 +232,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
       if (text) {
-        await channel.sendMessage(chatJid, text);
+        await broadcastMessage(channels, chatJid, text);
         storeMessageDirect({
           id: `bot-${crypto.randomUUID()}`,
           chat_jid: chatJid,
           sender: 'bot',
-          sender_name: ASSISTANT_NAME,
+          sender_name: agentName,
           content: text,
           timestamp: new Date().toISOString(),
           is_from_me: true,
@@ -243,7 +258,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   });
 
-  await channel.setTyping?.(chatJid, false);
+  for (const ch of findAllChannels(channels, chatJid)) {
+    await ch.setTyping?.(chatJid, false);
+  }
   if (idleTimer) clearTimeout(idleTimer);
 
   if (output === 'error' || hadError) {
@@ -323,7 +340,7 @@ async function runAgent(
         groupFolder: group.folder,
         chatJid,
         isMain,
-        assistantName: ASSISTANT_NAME,
+        assistantName: group.assistantName || ASSISTANT_NAME,
       },
       (proc, containerName) =>
         queue.registerProcess(chatJid, proc, containerName, group.folder),
@@ -418,7 +435,7 @@ async function startMessageLoop(): Promise<void> {
           const allPending = getMessagesSince(
             chatJid,
             lastAgentTimestamp[chatJid] || '',
-            ASSISTANT_NAME,
+            groupAssistantName(chatJid),
           );
           const messagesToSend =
             allPending.length > 0 ? allPending : groupMessages;
@@ -433,11 +450,11 @@ async function startMessageLoop(): Promise<void> {
               messagesToSend[messagesToSend.length - 1].timestamp;
             saveState();
             // Show typing indicator while the container processes the piped message
-            channel
-              .setTyping?.(chatJid, true)
-              ?.catch((err) =>
+            for (const ch of findAllChannels(channels, chatJid)) {
+              ch.setTyping?.(chatJid, true)?.catch((err) =>
                 logger.warn({ chatJid, err }, 'Failed to set typing indicator'),
               );
+            }
           } else {
             // No active container — enqueue for a new one
             queue.enqueueMessageCheck(chatJid);
@@ -458,7 +475,7 @@ async function startMessageLoop(): Promise<void> {
 function recoverPendingMessages(): void {
   for (const [chatJid, group] of Object.entries(registeredGroups)) {
     const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
-    const pending = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME);
+    const pending = getMessagesSince(chatJid, sinceTimestamp, groupAssistantName(chatJid));
     if (pending.length > 0) {
       logger.info(
         { group: group.name, pendingCount: pending.length },
@@ -510,6 +527,24 @@ async function main(): Promise<void> {
         }
       }
       storeMessage(msg);
+
+      // Bridge messages between channels:
+      // - Terminal user messages → forward to Telegram
+      // - Telegram user messages → display in terminal
+      if (msg.sender === 'terminal-user') {
+        for (const ch of channels) {
+          if (ch.name !== 'terminal' && ch.ownsJid(chatJid) && ch.isConnected()) {
+            ch.sendMessage(chatJid, `[You] ${msg.content}`).catch((err) =>
+              logger.warn({ chatJid, err }, 'Failed to bridge terminal message'),
+            );
+          }
+        }
+      } else if (!msg.is_bot_message) {
+        const term = getTerminalChannel();
+        if (term) {
+          term.displayInbound(chatJid, msg.sender_name, msg.content);
+        }
+      }
     },
     onChatMetadata: (
       chatJid: string,
@@ -555,19 +590,21 @@ async function main(): Promise<void> {
     onProcess: (groupJid, proc, containerName, groupFolder) =>
       queue.registerProcess(groupJid, proc, containerName, groupFolder),
     sendMessage: async (jid, rawText) => {
-      const channel = findChannel(channels, jid);
-      if (!channel) {
+      const targets = findAllChannels(channels, jid).filter((c) =>
+        c.isConnected(),
+      );
+      if (targets.length === 0) {
         logger.warn({ jid }, 'No channel owns JID, cannot send message');
         return;
       }
       const text = formatOutbound(rawText);
       if (text) {
-        await channel.sendMessage(jid, text);
+        await Promise.all(targets.map((c) => c.sendMessage(jid, text)));
         storeMessageDirect({
           id: `bot-${crypto.randomUUID()}`,
           chat_jid: jid,
           sender: 'bot',
-          sender_name: ASSISTANT_NAME,
+          sender_name: groupAssistantName(jid),
           content: text,
           timestamp: new Date().toISOString(),
           is_from_me: true,
@@ -577,26 +614,32 @@ async function main(): Promise<void> {
     },
   });
   startIpcWatcher({
-    sendMessage: (jid, text) => {
-      const channel = findChannel(channels, jid);
-      if (!channel) throw new Error(`No channel for JID: ${jid}`);
+    sendMessage: async (jid, text) => {
+      const targets = findAllChannels(channels, jid).filter((c) =>
+        c.isConnected(),
+      );
+      if (targets.length === 0) throw new Error(`No channel for JID: ${jid}`);
       storeMessageDirect({
         id: `bot-${crypto.randomUUID()}`,
         chat_jid: jid,
         sender: 'bot',
-        sender_name: ASSISTANT_NAME,
+        sender_name: groupAssistantName(jid),
         content: text,
         timestamp: new Date().toISOString(),
         is_from_me: true,
         is_bot_message: true,
       });
-      return channel.sendMessage(jid, text);
+      await Promise.all(targets.map((c) => c.sendMessage(jid, text)));
     },
-    sendFile: (jid, filePath, caption) => {
-      const channel = findChannel(channels, jid);
-      if (!channel) throw new Error(`No channel for JID: ${jid}`);
-      if (!channel.sendFile) throw new Error(`Channel does not support file sending: ${jid}`);
-      return channel.sendFile(jid, filePath, caption);
+    sendFile: async (jid, filePath, caption) => {
+      const targets = findAllChannels(channels, jid).filter(
+        (c) => c.isConnected() && c.sendFile,
+      );
+      if (targets.length === 0)
+        throw new Error(`No channel supports file sending for JID: ${jid}`);
+      await Promise.all(
+        targets.map((c) => c.sendFile!(jid, filePath, caption)),
+      );
     },
     registeredGroups: () => registeredGroups,
     registerGroup,

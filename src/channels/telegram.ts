@@ -249,10 +249,6 @@ export class TelegramChannel implements Channel {
             { username: botInfo.username, id: botInfo.id },
             'Telegram bot connected',
           );
-          console.log(`\n  Telegram bot: @${botInfo.username}`);
-          console.log(
-            `  Send /chatid to the bot to get a chat's registration ID\n`,
-          );
           resolve();
         },
       });
@@ -302,7 +298,11 @@ export class TelegramChannel implements Channel {
     }
   }
 
-  async sendFile(jid: string, filePath: string, caption?: string): Promise<void> {
+  async sendFile(
+    jid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<void> {
     if (!this.bot) {
       logger.warn('Telegram bot not initialized');
       return;
@@ -311,7 +311,10 @@ export class TelegramChannel implements Channel {
     try {
       const numericId = jid.replace(/^tg:/, '');
       const ext = path.extname(filePath).toLowerCase();
-      const file = new InputFile(fs.createReadStream(filePath), path.basename(filePath));
+      const file = new InputFile(
+        fs.createReadStream(filePath),
+        path.basename(filePath),
+      );
 
       if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) {
         await this.bot.api.sendPhoto(numericId, file, { caption });
@@ -391,9 +394,15 @@ export async function sendPoolMessage(
     try {
       await poolApis[idx].setMyName(sender);
       await new Promise((r) => setTimeout(r, 2000));
-      logger.info({ sender, groupFolder, poolIndex: idx }, 'Assigned and renamed pool bot');
+      logger.info(
+        { sender, groupFolder, poolIndex: idx },
+        'Assigned and renamed pool bot',
+      );
     } catch (err) {
-      logger.warn({ sender, err }, 'Failed to rename pool bot (sending anyway)');
+      logger.warn(
+        { sender, err },
+        'Failed to rename pool bot (sending anyway)',
+      );
     }
   }
 
@@ -408,7 +417,10 @@ export async function sendPoolMessage(
         await api.sendMessage(numericId, text.slice(i, i + MAX_LENGTH));
       }
     }
-    logger.info({ chatId, sender, poolIndex: idx, length: text.length }, 'Pool message sent');
+    logger.info(
+      { chatId, sender, poolIndex: idx, length: text.length },
+      'Pool message sent',
+    );
   } catch (err) {
     logger.error({ chatId, sender, err }, 'Failed to send pool message');
   }
@@ -435,9 +447,15 @@ export async function sendPoolFile(
     try {
       await poolApis[idx].setMyName(sender);
       await new Promise((r) => setTimeout(r, 2000));
-      logger.info({ sender, groupFolder, poolIndex: idx }, 'Assigned and renamed pool bot');
+      logger.info(
+        { sender, groupFolder, poolIndex: idx },
+        'Assigned and renamed pool bot',
+      );
     } catch (err) {
-      logger.warn({ sender, err }, 'Failed to rename pool bot (sending anyway)');
+      logger.warn(
+        { sender, err },
+        'Failed to rename pool bot (sending anyway)',
+      );
     }
   }
 
@@ -445,7 +463,10 @@ export async function sendPoolFile(
   try {
     const numericId = chatId.replace(/^tg:/, '');
     const ext = path.extname(filePath).toLowerCase();
-    const file = new InputFile(fs.createReadStream(filePath), path.basename(filePath));
+    const file = new InputFile(
+      fs.createReadStream(filePath),
+      path.basename(filePath),
+    );
 
     if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) {
       await api.sendPhoto(numericId, file, { caption });

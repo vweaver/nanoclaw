@@ -24,7 +24,11 @@ function resolveContainerPath(
   registeredGroups: Record<string, RegisteredGroup>,
 ): string | null {
   if (containerPath.startsWith('/workspace/group/')) {
-    return path.join(GROUPS_DIR, sourceGroup, containerPath.slice('/workspace/group/'.length));
+    return path.join(
+      GROUPS_DIR,
+      sourceGroup,
+      containerPath.slice('/workspace/group/'.length),
+    );
   }
   if (containerPath.startsWith('/workspace/extra/')) {
     const rest = containerPath.slice('/workspace/extra/'.length);
@@ -32,7 +36,10 @@ function resolveContainerPath(
     const subPath = rest.slice(mountName.length + 1);
     // Find the group's additional mount config to get the host path
     for (const group of Object.values(registeredGroups)) {
-      if (group.folder === sourceGroup && group.containerConfig?.additionalMounts) {
+      if (
+        group.folder === sourceGroup &&
+        group.containerConfig?.additionalMounts
+      ) {
         for (const mount of group.containerConfig.additionalMounts) {
           const cp = mount.containerPath || path.basename(mount.hostPath);
           if (cp === mountName) {
@@ -44,7 +51,10 @@ function resolveContainerPath(
     return null;
   }
   if (containerPath.startsWith('/workspace/project/')) {
-    return path.join(process.cwd(), containerPath.slice('/workspace/project/'.length));
+    return path.join(
+      process.cwd(),
+      containerPath.slice('/workspace/project/'.length),
+    );
   }
   return null;
 }
@@ -116,8 +126,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
               // Authorization: verify this group can send to this chatJid
               const targetGroup = registeredGroups[data.chatJid];
               const authorized =
-                isMain ||
-                (targetGroup && targetGroup.folder === sourceGroup);
+                isMain || (targetGroup && targetGroup.folder === sourceGroup);
 
               if (data.type === 'message' && data.chatJid && data.text) {
                 if (authorized) {
@@ -141,7 +150,11 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     'Unauthorized IPC message attempt blocked',
                   );
                 }
-              } else if (data.type === 'file' && data.chatJid && data.filePath) {
+              } else if (
+                data.type === 'file' &&
+                data.chatJid &&
+                data.filePath
+              ) {
                 if (authorized) {
                   const hostPath = resolveContainerPath(
                     data.filePath,
@@ -172,7 +185,11 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     );
                   }
                   logger.info(
-                    { chatJid: data.chatJid, filePath: data.filePath, sourceGroup },
+                    {
+                      chatJid: data.chatJid,
+                      filePath: data.filePath,
+                      sourceGroup,
+                    },
                     'IPC file sent',
                   );
                 } else {

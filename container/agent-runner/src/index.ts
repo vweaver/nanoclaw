@@ -391,11 +391,25 @@ async function runQuery(
   let messageCount = 0;
   let resultCount = 0;
 
-  // Load global CLAUDE.md as additional system context (shared across all groups)
+  // Load global CLAUDE.md as additional system context (shared across all groups).
+  // If the group has a per-group assistantName, prepend an identity override so the
+  // global "You are Andy" doesn't take precedence over the group's identity.
   const globalClaudeMdPath = '/workspace/global/CLAUDE.md';
   let globalClaudeMd: string | undefined;
   if (!containerInput.isMain && fs.existsSync(globalClaudeMdPath)) {
-    globalClaudeMd = fs.readFileSync(globalClaudeMdPath, 'utf-8');
+    let raw = fs.readFileSync(globalClaudeMdPath, 'utf-8');
+    if (containerInput.assistantName) {
+      // Replace the identity line in global CLAUDE.md with the per-group name
+      raw = raw.replace(
+        /^# .+/m,
+        `# ${containerInput.assistantName}`,
+      );
+      raw = raw.replace(
+        /You are \w+, a personal assistant/,
+        `You are ${containerInput.assistantName}, a personal assistant`,
+      );
+    }
+    globalClaudeMd = raw;
   }
 
   // Discover additional directories mounted at /workspace/extra/*
