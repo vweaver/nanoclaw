@@ -462,7 +462,7 @@ server.tool(
       }
 
       const isAllDay =
-        existing.DTSTART && existing.DTSTART.length === 8;
+        !!(existing.DTSTART && existing.DTSTART.length === 8);
       const ical = buildVEvent({
         uid,
         summary: summary || existing.SUMMARY || '(no title)',
