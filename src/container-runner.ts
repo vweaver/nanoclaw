@@ -232,6 +232,7 @@ function readSecrets(): Record<string, string> {
     'CALDAV_URL',
     'CALDAV_USERNAME',
     'CALDAV_PASSWORD',
+    'NOTION_API_TOKEN',
   ]);
 }
 

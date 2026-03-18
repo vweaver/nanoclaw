@@ -447,7 +447,8 @@ async function runQuery(
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
         'mcp__nanoclaw__*',
-        'mcp__caldav__*'
+        'mcp__caldav__*',
+        'mcp__notion__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -471,6 +472,15 @@ async function runQuery(
               CALDAV_URL: sdkEnv.CALDAV_URL || '',
               CALDAV_USERNAME: sdkEnv.CALDAV_USERNAME || '',
               CALDAV_PASSWORD: sdkEnv.CALDAV_PASSWORD || '',
+            },
+          },
+        } : {}),
+        ...(sdkEnv.NOTION_API_TOKEN ? {
+          notion: {
+            command: 'node',
+            args: [path.join(path.dirname(mcpServerPath), 'notion-mcp-stdio.js')],
+            env: {
+              NOTION_API_TOKEN: sdkEnv.NOTION_API_TOKEN || '',
             },
           },
         } : {}),
