@@ -446,7 +446,8 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        'mcp__caldav__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -462,6 +463,17 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        ...(sdkEnv.CALDAV_URL ? {
+          caldav: {
+            command: 'node',
+            args: [path.join(path.dirname(mcpServerPath), 'caldav-mcp-stdio.js')],
+            env: {
+              CALDAV_URL: sdkEnv.CALDAV_URL || '',
+              CALDAV_USERNAME: sdkEnv.CALDAV_USERNAME || '',
+              CALDAV_PASSWORD: sdkEnv.CALDAV_PASSWORD || '',
+            },
+          },
+        } : {}),
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],

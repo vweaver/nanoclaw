@@ -229,6 +229,9 @@ function readSecrets(): Record<string, string> {
     'ANTHROPIC_API_KEY',
     'ANTHROPIC_BASE_URL',
     'ANTHROPIC_AUTH_TOKEN',
+    'CALDAV_URL',
+    'CALDAV_USERNAME',
+    'CALDAV_PASSWORD',
   ]);
 }
 
