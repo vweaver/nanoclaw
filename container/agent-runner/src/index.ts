@@ -448,7 +448,8 @@ async function runQuery(
         'NotebookEdit',
         'mcp__nanoclaw__*',
         'mcp__caldav__*',
-        'mcp__notion__*'
+        'mcp__notion__*',
+        'mcp__email__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -481,6 +482,18 @@ async function runQuery(
             args: [path.join(path.dirname(mcpServerPath), 'notion-mcp-stdio.js')],
             env: {
               NOTION_API_TOKEN: sdkEnv.NOTION_API_TOKEN || '',
+            },
+          },
+        } : {}),
+        ...(sdkEnv.IMAP_HOST ? {
+          email: {
+            command: 'node',
+            args: [path.join(path.dirname(mcpServerPath), 'imap-mcp-stdio.js')],
+            env: {
+              IMAP_HOST: sdkEnv.IMAP_HOST || '',
+              IMAP_USER: sdkEnv.IMAP_USER || '',
+              IMAP_PASSWORD: sdkEnv.IMAP_PASSWORD || '',
+              IMAP_PORT: sdkEnv.IMAP_PORT || '993',
             },
           },
         } : {}),

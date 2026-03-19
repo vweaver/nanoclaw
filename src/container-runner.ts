@@ -233,6 +233,10 @@ function readSecrets(): Record<string, string> {
     'CALDAV_USERNAME',
     'CALDAV_PASSWORD',
     'NOTION_API_TOKEN',
+    'IMAP_HOST',
+    'IMAP_USER',
+    'IMAP_PASSWORD',
+    'IMAP_PORT',
   ]);
 }
 
