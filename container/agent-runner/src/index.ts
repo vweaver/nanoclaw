@@ -450,7 +450,8 @@ async function runQuery(
         'mcp__caldav__*',
         'mcp__notion__*',
         'mcp__email__*',
-        'mcp__wave__*'
+        'mcp__wave__*',
+        'mcp__clockify__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -492,6 +493,15 @@ async function runQuery(
             args: [path.join(path.dirname(mcpServerPath), 'wave-mcp-stdio.js')],
             env: {
               WAVE_FULL_ACCESS_TOKEN: sdkEnv.WAVE_FULL_ACCESS_TOKEN || '',
+            },
+          },
+        } : {}),
+        ...(sdkEnv.CLOCKIFY_API_KEY ? {
+          clockify: {
+            command: 'node',
+            args: [path.join(path.dirname(mcpServerPath), 'clockify-mcp-stdio.js')],
+            env: {
+              CLOCKIFY_API_KEY: sdkEnv.CLOCKIFY_API_KEY || '',
             },
           },
         } : {}),

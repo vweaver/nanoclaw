@@ -236,6 +236,7 @@ function readSecrets(): Record<string, string> {
     'WAVE_FULL_ACCESS_TOKEN',
     'WAVE_CLIENT_ID',
     'WAVE_CLIENT_SECRET',
+    'CLOCKIFY_API_KEY',
     'IMAP_HOST',
     'IMAP_USER',
     'IMAP_PASSWORD',
