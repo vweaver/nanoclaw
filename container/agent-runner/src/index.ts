@@ -449,7 +449,8 @@ async function runQuery(
         'mcp__nanoclaw__*',
         'mcp__caldav__*',
         'mcp__notion__*',
-        'mcp__email__*'
+        'mcp__email__*',
+        'mcp__wave__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -482,6 +483,16 @@ async function runQuery(
             args: [path.join(path.dirname(mcpServerPath), 'notion-mcp-stdio.js')],
             env: {
               NOTION_API_TOKEN: sdkEnv.NOTION_API_TOKEN || '',
+            },
+          },
+        } : {}),
+        ...(sdkEnv.WAVE_ACCESS_TOKEN ? {
+          wave: {
+            command: 'node',
+            args: [path.join(path.dirname(mcpServerPath), 'wave-mcp-stdio.js')],
+            env: {
+              WAVE_ACCESS_TOKEN: sdkEnv.WAVE_ACCESS_TOKEN || '',
+              WAVE_BUSINESS_ID: sdkEnv.WAVE_BUSINESS_ID || '',
             },
           },
         } : {}),
