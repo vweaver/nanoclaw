@@ -20,12 +20,14 @@ async function withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
     secure: true,
     auth: { user: IMAP_USER, pass: IMAP_PASSWORD },
     logger: false,
-  });
+    socketTimeout: 30000,
+    greetingTimeout: 15000,
+  } as any);
   await client.connect();
   try {
     return await fn(client);
   } finally {
-    await client.logout();
+    try { await client.logout(); } catch { /* ignore logout errors */ }
   }
 }
 
@@ -255,78 +257,73 @@ server.tool(
       const message = await withClient(async (client) => {
         const lock = await client.getMailboxLock(folderPath);
         try {
-          let result: {
-            subject: string;
-            from: string;
-            to: string;
-            cc: string;
-            date: string;
-            body: string;
-            attachments: string[];
-          } | null = null;
-
+          // Step 1: Fetch envelope and body structure
+          let envelope: any = null;
+          let bodyStructure: any = null;
           for await (const msg of client.fetch([uid], {
             envelope: true,
             bodyStructure: true,
             uid: true,
           })) {
-            // Get the text body
-            let body = '';
-            try {
-              const textPart = await client.download(uid.toString(), undefined, {
-                uid: true,
-              });
-              if (textPart?.content) {
-                const chunks: Buffer[] = [];
-                for await (const chunk of textPart.content) {
-                  chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-                }
-                const raw = Buffer.concat(chunks).toString('utf-8');
-                // Strip HTML tags if it looks like HTML
-                if (raw.includes('<html') || raw.includes('<body')) {
-                  body = raw
-                    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-                    .replace(/<[^>]+>/g, ' ')
-                    .replace(/&nbsp;/g, ' ')
-                    .replace(/&amp;/g, '&')
-                    .replace(/&lt;/g, '<')
-                    .replace(/&gt;/g, '>')
-                    .replace(/&quot;/g, '"')
-                    .replace(/\s+/g, ' ')
-                    .trim();
-                } else {
-                  body = raw;
-                }
-              }
-            } catch {
-              body = '(could not download body)';
-            }
-
-            // List attachments from body structure
-            const attachments: string[] = [];
-            const walkParts = (part: any) => {
-              if (part.disposition === 'attachment' && part.parameters?.name) {
-                attachments.push(part.parameters.name);
-              }
-              if (part.childNodes) {
-                for (const child of part.childNodes) walkParts(child);
-              }
-            };
-            if (msg.bodyStructure) walkParts(msg.bodyStructure);
-
-            result = {
-              subject: msg.envelope?.subject || '(no subject)',
-              from: formatAddress(msg.envelope?.from),
-              to: formatAddress(msg.envelope?.to),
-              cc: formatAddress(msg.envelope?.cc),
-              date: msg.envelope?.date?.toISOString() || '',
-              body: body.slice(0, 10000), // cap at 10k chars
-              attachments,
-            };
+            envelope = msg.envelope;
+            bodyStructure = msg.bodyStructure;
           }
 
-          return result;
+          if (!envelope) return null;
+
+          // Step 2: Download body (separate from fetch to avoid nested IMAP commands)
+          let body = '';
+          try {
+            const textPart = await client.download(String(uid), undefined, {
+              uid: true,
+            });
+            if (textPart?.content) {
+              const chunks: Buffer[] = [];
+              for await (const chunk of textPart.content) {
+                chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+              }
+              const raw = Buffer.concat(chunks).toString('utf-8');
+              if (raw.includes('<html') || raw.includes('<body')) {
+                body = raw
+                  .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                  .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                  .replace(/<[^>]+>/g, ' ')
+                  .replace(/&nbsp;/g, ' ')
+                  .replace(/&amp;/g, '&')
+                  .replace(/&lt;/g, '<')
+                  .replace(/&gt;/g, '>')
+                  .replace(/&quot;/g, '"')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              } else {
+                body = raw;
+              }
+            }
+          } catch {
+            body = '(could not download body)';
+          }
+
+          // Step 3: List attachments from body structure
+          const attachments: string[] = [];
+          const walkParts = (part: any) => {
+            if (part.disposition === 'attachment' && part.parameters?.name) {
+              attachments.push(part.parameters.name);
+            }
+            if (part.childNodes) {
+              for (const child of part.childNodes) walkParts(child);
+            }
+          };
+          if (bodyStructure) walkParts(bodyStructure);
+
+          return {
+            subject: envelope?.subject || '(no subject)',
+            from: formatAddress(envelope?.from),
+            to: formatAddress(envelope?.to),
+            cc: formatAddress(envelope?.cc),
+            date: envelope?.date?.toISOString() || '',
+            body: body.slice(0, 10000),
+            attachments,
+          };
         } finally {
           lock.release();
         }
