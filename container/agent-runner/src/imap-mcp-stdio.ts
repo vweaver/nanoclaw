@@ -303,14 +303,25 @@ server.tool(
             body = '(could not download body)';
           }
 
-          // Step 3: List attachments from body structure
-          const attachments: string[] = [];
-          const walkParts = (part: any) => {
-            if (part.disposition === 'attachment' && part.parameters?.name) {
-              attachments.push(part.parameters.name);
+          // Step 3: List attachments from body structure with part numbers
+          const attachments: Array<{ name: string; part: string; size?: number; type?: string }> = [];
+          const walkParts = (part: any, path: string = '') => {
+            const partNum = part.part || path;
+            if (
+              (part.disposition === 'attachment' || part.disposition === 'inline') &&
+              (part.parameters?.name || part.dispositionParameters?.filename)
+            ) {
+              attachments.push({
+                name: part.parameters?.name || part.dispositionParameters?.filename || 'unnamed',
+                part: partNum,
+                size: part.size,
+                type: part.type ? `${part.type}/${part.subtype || ''}` : undefined,
+              });
             }
             if (part.childNodes) {
-              for (const child of part.childNodes) walkParts(child);
+              for (let i = 0; i < part.childNodes.length; i++) {
+                walkParts(part.childNodes[i], part.childNodes[i].part || `${partNum ? partNum + '.' : ''}${i + 1}`);
+              }
             }
           };
           if (bodyStructure) walkParts(bodyStructure);
@@ -346,7 +357,12 @@ server.tool(
       if (message.cc) parts.push(`CC: ${message.cc}`);
       parts.push(`Date: ${message.date}`);
       if (message.attachments.length > 0) {
-        parts.push(`Attachments: ${message.attachments.join(', ')}`);
+        parts.push('Attachments:');
+        for (const a of message.attachments) {
+          const size = a.size ? ` (${Math.round(a.size / 1024)}KB)` : '';
+          const type = a.type ? ` [${a.type}]` : '';
+          parts.push(`  • ${a.name}${size}${type} — part: ${a.part}`);
+        }
       }
       parts.push('', '---', '', message.body);
 
@@ -396,6 +412,103 @@ server.tool(
           {
             type: 'text' as const,
             text: `${count} unread message${count === 1 ? '' : 's'} in ${folderPath}`,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'email_download_attachment',
+  'Download an email attachment and save it to /workspace/group/. Use email_read_message first to get the part number. Returns the saved file path.',
+  {
+    folder: z.string().default('INBOX').describe('Folder path (default: INBOX)'),
+    uid: z.number().describe('Message UID'),
+    part: z.string().describe('MIME part number from email_read_message attachment listing'),
+    filename: z.string().default('').describe('Override filename (empty = uses original name from email)'),
+  },
+  async (params) => {
+    try {
+      const folderPath = params.folder || 'INBOX';
+      const uid = params.uid;
+      const part = params.part;
+      const filename = params.filename;
+
+      const result = await withClient(async (client) => {
+        const lock = await client.getMailboxLock(folderPath);
+        try {
+          // Get the attachment name from body structure if filename not provided
+          let attachName = filename || 'attachment';
+          if (!filename) {
+            for await (const msg of client.fetch([uid], {
+              bodyStructure: true,
+              uid: true,
+            })) {
+              const findPart = (p: any): string | null => {
+                if (p.part === part) {
+                  return p.parameters?.name || p.dispositionParameters?.filename || null;
+                }
+                if (p.childNodes) {
+                  for (const child of p.childNodes) {
+                    const found = findPart(child);
+                    if (found) return found;
+                  }
+                }
+                return null;
+              };
+              if (msg.bodyStructure) {
+                attachName = findPart(msg.bodyStructure) || attachName;
+              }
+            }
+          }
+
+          // Download the specific MIME part
+          const dl = await client.download(String(uid), part, { uid: true });
+          if (!dl?.content) {
+            return { error: 'Could not download attachment' };
+          }
+
+          const chunks: Buffer[] = [];
+          for await (const chunk of dl.content) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          }
+          const data = Buffer.concat(chunks);
+
+          // Save to workspace
+          const fs = await import('fs');
+          const path = await import('path');
+          const savePath = path.join('/workspace/group', attachName);
+          fs.writeFileSync(savePath, data);
+
+          return { path: savePath, size: data.length, name: attachName };
+        } finally {
+          lock.release();
+        }
+      });
+
+      if ('error' in result) {
+        return {
+          content: [{ type: 'text' as const, text: String(result.error) }],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Attachment saved: ${result.path} (${Math.round(result.size / 1024)}KB)`,
           },
         ],
       };
