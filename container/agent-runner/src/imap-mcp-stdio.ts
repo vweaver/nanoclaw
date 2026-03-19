@@ -151,45 +151,28 @@ server.tool(
             seen: boolean;
           }> = [];
 
-          if (hasSearch) {
-            const searchResult = await client.search(searchCriteria, { uid: true });
-            const uids = Array.isArray(searchResult) ? searchResult : [];
-            if (uids.length === 0) return result;
+          // Always use IMAP SEARCH to get UIDs, then fetch by UID.
+          // This ensures UIDs returned are valid for email_read_message.
+          // Default search: all messages (empty criteria = match all).
+          const searchCriteriaFinal = hasSearch ? searchCriteria : { all: true };
+          const searchResult = await client.search(searchCriteriaFinal, { uid: true });
+          const uids = Array.isArray(searchResult) ? searchResult : [];
+          if (uids.length === 0) return result;
 
-            // Take the most recent ones
-            const recentUids = uids.slice(-maxMessages);
-            for await (const msg of client.fetch(recentUids, {
-              envelope: true,
-              flags: true,
-              uid: true,
-            })) {
-              result.push({
-                uid: msg.uid,
-                subject: msg.envelope?.subject || '(no subject)',
-                from: formatAddress(msg.envelope?.from),
-                date: msg.envelope?.date?.toISOString() || '',
-                seen: msg.flags?.has('\\Seen') || false,
-              });
-            }
-          } else {
-            // Fetch most recent messages by sequence number
-            const total = (client.mailbox as any)?.exists || 0;
-            if (total === 0) return result;
-
-            const startSeq = Math.max(1, total - maxMessages + 1);
-            for await (const msg of client.fetch(`${startSeq}:*`, {
-              envelope: true,
-              flags: true,
-              uid: true,
-            })) {
-              result.push({
-                uid: msg.uid,
-                subject: msg.envelope?.subject || '(no subject)',
-                from: formatAddress(msg.envelope?.from),
-                date: msg.envelope?.date?.toISOString() || '',
-                seen: msg.flags?.has('\\Seen') || false,
-              });
-            }
+          // Take the most recent UIDs
+          const recentUids = uids.slice(-maxMessages);
+          for await (const msg of client.fetch(
+            recentUids,
+            { envelope: true, flags: true, uid: true },
+            { uid: true },
+          )) {
+            result.push({
+              uid: msg.uid,
+              subject: msg.envelope?.subject || '(no subject)',
+              from: formatAddress(msg.envelope?.from),
+              date: msg.envelope?.date?.toISOString() || '',
+              seen: msg.flags?.has('\\Seen') || false,
+            });
           }
 
           // Sort newest first
@@ -260,11 +243,11 @@ server.tool(
           // Step 1: Fetch envelope and body structure
           let envelope: any = null;
           let bodyStructure: any = null;
-          for await (const msg of client.fetch([uid], {
-            envelope: true,
-            bodyStructure: true,
-            uid: true,
-          })) {
+          for await (const msg of client.fetch(
+            [uid],
+            { envelope: true, bodyStructure: true, uid: true },
+            { uid: true },
+          )) {
             envelope = msg.envelope;
             bodyStructure = msg.bodyStructure;
           }
@@ -451,10 +434,11 @@ server.tool(
           // Get the attachment name from body structure if filename not provided
           let attachName = filename || 'attachment';
           if (!filename) {
-            for await (const msg of client.fetch([uid], {
-              bodyStructure: true,
-              uid: true,
-            })) {
+            for await (const msg of client.fetch(
+              [uid],
+              { bodyStructure: true, uid: true },
+              { uid: true },
+            )) {
               const findPart = (p: any): string | null => {
                 if (p.part === part) {
                   return p.parameters?.name || p.dispositionParameters?.filename || null;
