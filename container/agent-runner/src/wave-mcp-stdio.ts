@@ -277,7 +277,8 @@ server.tool(
                     description
                     quantity
                     unitPrice
-                    amount { value currency { code } }
+                    subtotal { value currency { code } }
+                    taxes { amount { value currency { code } } }
                     product { name }
                     account { name }
                   }
@@ -333,7 +334,7 @@ server.tool(
         const product = item.product?.name ? `[${item.product.name}] ` : '';
         lines.push(
           `  ${product}${item.description || '(no description)'}`,
-          `    Qty: ${item.quantity} × ${item.unitPrice} = ${formatMoney(item.amount)}`,
+          `    Qty: ${item.quantity} × ${item.unitPrice} = ${formatMoney(item.subtotal)}`,
         );
       }
 
