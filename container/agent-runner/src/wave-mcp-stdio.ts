@@ -8,9 +8,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-const WAVE_ACCESS_TOKEN = process.env.WAVE_ACCESS_TOKEN!;
-const WAVE_BUSINESS_ID = process.env.WAVE_BUSINESS_ID!;
+const WAVE_ACCESS_TOKEN = process.env.WAVE_FULL_ACCESS_TOKEN!;
 const WAVE_ENDPOINT = 'https://gql.waveapps.com/graphql/public';
+
+// Business ID is auto-discovered on first use
+let cachedBusinessId: string | null = process.env.WAVE_BUSINESS_ID || null;
 
 async function waveQuery(
   query: string,
@@ -27,6 +29,29 @@ async function waveQuery(
   return resp.json() as Promise<{ data?: any; errors?: any[] }>;
 }
 
+/** Discover the first business ID from the user's account. */
+async function getBusinessId(): Promise<string> {
+  if (cachedBusinessId) return cachedBusinessId;
+
+  const result = await waveQuery(`
+    query {
+      businesses(page: 1, pageSize: 10) {
+        edges {
+          node { id name }
+        }
+      }
+    }
+  `);
+
+  const edges = result.data?.businesses?.edges;
+  if (!edges?.length) {
+    throw new Error('No businesses found on this Wave account');
+  }
+
+  cachedBusinessId = edges[0].node.id;
+  return cachedBusinessId!;
+}
+
 function formatMoney(amount: any): string {
   if (!amount) return '';
   return `${amount.value} ${amount.currency?.code || ''}`.trim();
@@ -38,6 +63,74 @@ const server = new McpServer({
   name: 'wave',
   version: '1.0.0',
 });
+
+server.tool(
+  'wave_list_businesses',
+  'List all businesses on the Wave account. Use this to find the business ID if you have multiple businesses.',
+  {},
+  async () => {
+    try {
+      const result = await waveQuery(`
+        query {
+          businesses(page: 1, pageSize: 50) {
+            edges {
+              node { id name isPersonal }
+            }
+          }
+        }
+      `);
+
+      if (result.errors) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `API errors: ${JSON.stringify(result.errors)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const edges = result.data?.businesses?.edges;
+      if (!edges?.length) {
+        return {
+          content: [
+            { type: 'text' as const, text: 'No businesses found.' },
+          ],
+        };
+      }
+
+      const active = cachedBusinessId || '(auto-selects first)';
+      const text = edges
+        .map((e: any) => {
+          const b = e.node;
+          const marker = b.id === cachedBusinessId ? ' <-- active' : '';
+          return `• ${b.name} (${b.isPersonal ? 'personal' : 'business'})${marker}\n  ID: ${b.id}`;
+        })
+        .join('\n\n');
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Active: ${active}\n\n${text}`,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
 
 server.tool(
   'wave_list_invoices',
@@ -81,7 +174,7 @@ server.tool(
       `;
 
       const result = await waveQuery(query, {
-        businessId: WAVE_BUSINESS_ID,
+        businessId: await getBusinessId(),
         page: page || 1,
         pageSize: Math.min(page_size || 25, 50),
       });
@@ -196,7 +289,7 @@ server.tool(
       `;
 
       const result = await waveQuery(query, {
-        businessId: WAVE_BUSINESS_ID,
+        businessId: await getBusinessId(),
         invoiceNumber: invoice_number,
       });
 
@@ -317,7 +410,7 @@ server.tool(
       `;
 
       const result = await waveQuery(query, {
-        businessId: WAVE_BUSINESS_ID,
+        businessId: await getBusinessId(),
         page: page || 1,
         pageSize: Math.min(page_size || 25, 50),
       });
@@ -411,7 +504,7 @@ server.tool(
       `;
 
       const result = await waveQuery(query, {
-        businessId: WAVE_BUSINESS_ID,
+        businessId: await getBusinessId(),
         page: page || 1,
         pageSize: Math.min(page_size || 50, 100),
       });
@@ -515,7 +608,7 @@ server.tool(
       `;
 
       const result = await waveQuery(query, {
-        businessId: WAVE_BUSINESS_ID,
+        businessId: await getBusinessId(),
         page: page || 1,
         pageSize: Math.min(page_size || 25, 50),
       });

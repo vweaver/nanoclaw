@@ -486,13 +486,12 @@ async function runQuery(
             },
           },
         } : {}),
-        ...(sdkEnv.WAVE_ACCESS_TOKEN ? {
+        ...(sdkEnv.WAVE_FULL_ACCESS_TOKEN ? {
           wave: {
             command: 'node',
             args: [path.join(path.dirname(mcpServerPath), 'wave-mcp-stdio.js')],
             env: {
-              WAVE_ACCESS_TOKEN: sdkEnv.WAVE_ACCESS_TOKEN || '',
-              WAVE_BUSINESS_ID: sdkEnv.WAVE_BUSINESS_ID || '',
+              WAVE_FULL_ACCESS_TOKEN: sdkEnv.WAVE_FULL_ACCESS_TOKEN || '',
             },
           },
         } : {}),
