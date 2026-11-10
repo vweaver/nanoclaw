@@ -96,6 +96,11 @@ export function commitCustomize(): void {
     const currentPath = path.join(cwd, relativePath);
 
     // Use /dev/null if either side doesn't exist
+    if (fs.existsSync(basePath) && fs.statSync(basePath).isDirectory()) {
+      throw new Error(
+        `diff error for ${relativePath}: base path is a directory, not a file`,
+      );
+    }
     const oldPath = fs.existsSync(basePath) ? basePath : '/dev/null';
     const newPath = fs.existsSync(currentPath) ? currentPath : '/dev/null';
 
